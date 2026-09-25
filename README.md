@@ -22,43 +22,68 @@ Useful utilities, scripts, and terminal extensions for **Google Antigravity (`ag
 ### ✨ Key Features
 
 - **🚀 Near-Zero Latency (~25-30ms)**: Auto-detects running interactive `agy` sessions and reads state directly, bypassing the 8–10s cold-start overhead of launching new CLI sessions.
-- **🔄 Standalone / Offline Ready**: Can be run completely outside the AI prompt loop—no LLM tokens, no conversational delay.
+- **🔄 Standalone / Offline Execution**: Runs directly in your shell—completely outside the AI chat prompt loop, saving LLM tokens and eliminating chat interface delays.
 - **🎯 Dynamic Pacing Target**: Automatically calculates where your usage *should* be relative to the elapsed days in the 7-day quota window, color-coding whether you are ahead or behind your weekly budget.
 - **⚡ Multiple Aliases**: Works with `wqa`, `weeklyquotaagi`, or `weeklyquotaagy`.
 
 ---
 
-## 📦 Installation
+## 📦 Setup & Installation
 
 ### 1. Clone the Repository
 
+Clone directly to your preferred workspace or tools directory (e.g. `~/Documents/code/antigravityskills`):
+
 ```bash
+cd ~/Documents/code
 git clone https://github.com/abhi266raj/antigravityskills.git
 cd antigravityskills
 ```
 
-### 2. Run the Installer
+### 2. Make Binaries Executable
+
+Ensure the scripts in `bin/` are executable:
 
 ```bash
+chmod +x bin/weeklyquotaagy bin/wqa
+```
+
+*(Optional)* If you want to install them into another folder, you can also run:
+```bash
+chmod +x install.sh
 ./install.sh
 ```
 
-This installs both `weeklyquotaagy` and `wqa` into `~/.agents/scripts/`.
+---
 
-### 3. Configure Your Shell (`~/.zshrc`)
+## 🐚 Shell Configuration (`~/.zshrc`)
 
-Add the directory to your `$PATH` and setup the aliases:
+To use `wqa` or `weeklyquotaagy` from anywhere with zero latency, configure your `~/.zshrc`:
+
+### 1. Add `bin` to your `$PATH`
 
 ```bash
-# Add to ~/.zshrc
-export PATH="$HOME/.agents/scripts:$PATH"
-
-# Direct aliases for instant execution
-alias wqa="weeklyquotaagy"
-alias weeklyquotaagi="weeklyquotaagy"
+export PATH="$HOME/Documents/code/antigravityskills/bin:$PATH"
 ```
 
-To enable microsecond enter-key precision latency tracking in `zsh`, optionally add:
+### 2. Set Up Aliases & In-Process Runner
+
+Add the following to `~/.zshrc`:
+
+```bash
+# Aliases
+alias wqa="weeklyquotaagy"
+alias weeklyquotaagi="weeklyquotaagy"
+
+# In-process runner: sources directly from the repo for maximum speed
+weeklyquotaagy() {
+  source "$HOME/Documents/code/antigravityskills/bin/weeklyquotaagy" "$@"
+}
+```
+
+### 3. (Optional) High-Precision Microsecond Latency Hook
+
+To calculate the exact latency from the instant you press <kbd>Enter</kbd> to output rendering:
 
 ```bash
 zmodload zsh/datetime 2>/dev/null
@@ -77,13 +102,10 @@ add-zsh-hook preexec _wq_preexec 2>/dev/null
 
 _wq_precmd() { __ENTER_KEY_EPOCH=""; }
 add-zsh-hook precmd _wq_precmd 2>/dev/null
-
-weeklyquotaagy() {
-  source "$HOME/.agents/scripts/weeklyquotaagy" "$@"
-}
 ```
 
-Reload your shell:
+### 4. Reload your Shell
+
 ```bash
 source ~/.zshrc
 ```
@@ -92,7 +114,7 @@ source ~/.zshrc
 
 ## 🛠️ Usage
 
-### Quick Run
+### Quick Execution
 ```bash
 wqa
 ```
@@ -119,7 +141,7 @@ Options:
 
 - **Repository**: [https://github.com/abhi266raj/antigravityskills](https://github.com/abhi266raj/antigravityskills)
 - **Primary Executables**:
-  - [`bin/wqa`](bin/wqa) - Lightweight binary entrypoint
+  - [`bin/wqa`](bin/wqa) - Lightweight standalone wrapper
   - [`bin/weeklyquotaagy`](bin/weeklyquotaagy) - Core pacing monitor & ANSI renderer
 
 ---
