@@ -56,33 +56,28 @@ chmod +x install.sh
 
 ---
 
-## 🐚 Shell Configuration (`~/.zshrc`)
+## 🐚 Shell Configuration
 
-To use `wqa` or `weeklyquotaagy` from anywhere with zero latency, configure your `~/.zshrc`:
+To make `wqa` and `weeklyquotaagy` available from any terminal session, add the repository's `bin/` directory to your shell's configuration:
 
-### 1. Add `bin` to your `$PATH`
+### 1. Zsh (`~/.zshrc`)
+
+Add to `~/.zshrc`:
 
 ```bash
+# 1. Add bin directory to PATH
 export PATH="$HOME/Documents/code/antigravityskills/bin:$PATH"
-```
 
-### 2. Set Up Aliases & In-Process Runner
-
-Add the following to `~/.zshrc`:
-
-```bash
-# Aliases
+# 2. Add alias
 alias wqa="weeklyquotaagy"
 
-# In-process runner: sources directly from the repo for maximum speed
+# 3. In-process runner: sources directly for maximum sub-millisecond speed (~25-30ms)
 weeklyquotaagy() {
   source "$HOME/Documents/code/antigravityskills/bin/weeklyquotaagy" "$@"
 }
 ```
 
-### 3. (Optional) High-Precision Microsecond Latency Hook
-
-To calculate the exact latency from the instant you press <kbd>Enter</kbd> to output rendering:
+*(Optional)* High-Precision Microsecond Latency Hook (tracks latency from exact <kbd>Enter</kbd> keystroke):
 
 ```bash
 zmodload zsh/datetime 2>/dev/null
@@ -103,10 +98,41 @@ _wq_precmd() { __ENTER_KEY_EPOCH=""; }
 add-zsh-hook precmd _wq_precmd 2>/dev/null
 ```
 
-### 4. Reload your Shell
-
+Reload Zsh:
 ```bash
 source ~/.zshrc
+```
+
+---
+
+### 2. Bash (`~/.bashrc` or `~/.bash_profile`)
+
+Add to your `~/.bashrc` (Linux) or `~/.bash_profile` (macOS):
+
+```bash
+# 1. Add bin directory to PATH
+export PATH="$HOME/Documents/code/antigravityskills/bin:$PATH"
+
+# 2. Add alias
+alias wqa="weeklyquotaagy"
+```
+
+Reload Bash:
+```bash
+source ~/.bashrc        # On Linux
+# or
+source ~/.bash_profile  # On macOS
+```
+
+---
+
+### 3. Fish (`~/.config/fish/config.fish`)
+
+Add to `~/.config/fish/config.fish`:
+
+```fish
+fish_add_path $HOME/Documents/code/antigravityskills/bin
+alias wqa="weeklyquotaagy"
 ```
 
 ---
