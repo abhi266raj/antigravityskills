@@ -23,7 +23,6 @@ fi
 echo ""
 echo "Recommended shell integration for sub-millisecond execution:"
 echo '  alias wqa="weeklyquotaagy"'
-echo '  alias weeklyquotaagi="weeklyquotaagy"'
 echo ""
 echo "Try running:"
 echo "  wqa"

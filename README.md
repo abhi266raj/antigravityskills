@@ -24,7 +24,7 @@ Useful utilities, scripts, and terminal extensions for **Google Antigravity (`ag
 - **🚀 Near-Zero Latency (~25-30ms)**: Auto-detects running interactive `agy` sessions and reads state directly, bypassing the 8–10s cold-start overhead of launching new CLI sessions.
 - **🔄 Standalone / Offline Execution**: Runs directly in your shell—completely outside the AI chat prompt loop, saving LLM tokens and eliminating chat interface delays.
 - **🎯 Dynamic Pacing Target**: Automatically calculates where your usage *should* be relative to the elapsed days in the 7-day quota window, color-coding whether you are ahead or behind your weekly budget.
-- **⚡ Multiple Aliases**: Works with `wqa`, `weeklyquotaagi`, or `weeklyquotaagy`.
+- **⚡ Multiple Aliases / Commands**: Works via `wqa` or `weeklyquotaagy`.
 
 ---
 
@@ -73,7 +73,6 @@ Add the following to `~/.zshrc`:
 ```bash
 # Aliases
 alias wqa="weeklyquotaagy"
-alias weeklyquotaagi="weeklyquotaagy"
 
 # In-process runner: sources directly from the repo for maximum speed
 weeklyquotaagy() {
@@ -117,10 +116,6 @@ source ~/.zshrc
 ### Quick Execution
 ```bash
 wqa
-```
-or
-```bash
-weeklyquotaagi
 ```
 
 ### Command Options
