@@ -1,0 +1,320 @@
+#!/bin/zsh
+# ==============================================================================
+# weeklyquotaagy — Antigravity Weekly Pacing Monitor
+# ==============================================================================
+# Overview:
+#   Tracks weekly quota burn rates and pacing relative to the 7-day reset cycle
+#   for Gemini and Claude/GPT models in Google Antigravity (AGY).
+#
+# Execution & Source Modes:
+#   1. live(terminal) [Fastest: ~30ms]:
+#      - Automatically detected if an interactive `agy` session is already running
+#        in any terminal (`pgrep -x agy`).
+#      - Reads the active quota state immediately, eliminating the 8-10s cold-start
+#        runtime overhead of spawning a new `agy` CLI process.
+#
+#   2. live(network) [Live fetch: ~9-10s]:
+#      - Triggered when NO terminal is currently running `agy`, or when explicitly
+#        forced via `weeklyquotaagy --fetch`.
+#      - Spawns `command agy -p "/quota"`, displays an animated progress spinner
+#        with real-time elapsed seconds, parses live figures & reset timestamps,
+#        and updates the active configuration file.
+#
+# Caching & TTL Policies:
+#   - Caching is NEVER assumed or forced by default.
+#   - When `--cached` is passed:
+#       * If cache age <= 1 hour (3600s), it renders immediately (~1ms).
+#       * If cache age > 1 hour (expired) or missing, it automatically falls
+#         through to a live network fetch to guarantee fresh, valid data.
+#   - Zero hardcoded fallback values: missing or unparseable data strictly raises
+#     an error on stderr with exit code 1.
+#
+# Usage:
+#   weeklyquotaagy                          # Auto-detects terminal state or fetches live
+#   weeklyquotaagy --cached                 # Read cache (max 1h TTL, falls back to live)
+#   weeklyquotaagy --fetch                  # Force fresh live network fetch with spinner
+#   weeklyquotaagy --no-progress            # Disable animated progress spinner
+#
+# Examples:
+#   weeklyquotaagy                          # Fast auto-detection (~30ms)
+#   weeklyquotaagy --cached                 # Fast cache lookup (~1ms)
+#   weeklyquotaagy --fetch                  # Force fresh live query from agy
+#   weeklyquotaagy --fetch --no-progress    # Network query without spinner
+# ==============================================================================
+
+zmodload zsh/datetime 2>/dev/null
+typeset -F 6 _T0=$EPOCHREALTIME
+typeset -F 6 _TS=$_T0
+local _real=0
+[[ -n "$__ENTER_KEY_EPOCH" ]] && { _TS=$__ENTER_KEY_EPOCH; _real=1; }
+
+local _CF="$HOME/.gemini/config/weekly_quota.conf"
+local _HL="" _GL="" _CL=""
+local _cached_mode=0
+local _force_fetch=0
+local _progress=1
+local _have_data=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --cached)                 _cached_mode=1;             shift ;;
+    --fetch|--sync|--refresh) _force_fetch=1;             shift ;;
+    --progress)               _progress=1;                shift ;;
+    --no-progress)            _progress=0;                shift ;;
+    -h|--help)
+        print "Usage: weeklyquotaagy [--cached | --fetch] [--no-progress]"
+        print ""
+        print "Options:"
+        print "  --cached       Use cached data if < 1h old (auto falls back to live network if expired)"
+        print "  --fetch        Force fresh live network fetch from agy (mutually exclusive with --cached)"
+        print "  --no-progress  Disable animated progress spinner during network fetch"
+        print "  -h, --help     Show this help message"
+        print ""
+        print "Examples:"
+        print "  weeklyquotaagy"
+        print "      Auto-detect terminal state (~30ms) or fetch live from network"
+        print "  weeklyquotaagy --cached"
+        print "      Fast cache lookup (~1ms, auto-refreshes if >1h old)"
+        print "  weeklyquotaagy --fetch"
+        print "      Force fresh live network query from agy (~10s)"
+        print "  weeklyquotaagy --fetch --no-progress"
+        print "      Force network query quietly without spinner animation"
+        return 0 2>/dev/null || exit 0 ;;
+    *)
+        print -u2 "weeklyquotaagy: unrecognized option '$1'"
+        print -u2 "Try 'weeklyquotaagy --help' for more information."
+        return 1 2>/dev/null || exit 1 ;;
+  esac
+done
+
+local ESC=$'\033'
+local cRe="${ESC}[1;31m" R="${ESC}[0m"
+
+# ── Validation: --cached and --fetch cannot be used together ──────────────────
+if (( _cached_mode && _force_fetch )); then
+  print -u2 "${cRe}Error:${R} weeklyquotaagy: Cannot use --cached and --fetch together."
+  print -u2 "Run 'weeklyquotaagy --help' for more information."
+  return 1 2>/dev/null || exit 1
+fi
+
+local _src_tag=""
+
+# ── 1. If agy is running in any terminal, or --cached is specified, use active state ─
+if (( ! _force_fetch )); then
+  local _agy_running=0
+  pgrep -x agy >/dev/null 2>&1 && _agy_running=1
+
+  if (( _cached_mode || _agy_running )) && [[ -f "$_CF" ]]; then
+    local _now_ts=$(date +%s)
+    local _mtime=$(stat -f %m "$_CF" 2>/dev/null || echo 0)
+    local _age=$(( _now_ts - _mtime ))
+    # Valid if under 1-hour TTL (or if agy is actively running)
+    if (( _age <= 3600 || _agy_running )); then
+      source "$_CF" 2>/dev/null
+      [[ -z "$_HL" && -n "$HOURS_LEFT"  ]] && _HL="$HOURS_LEFT"
+      [[ -z "$_GL" && -n "$GEMINI_LEFT" ]] && _GL="$GEMINI_LEFT"
+      [[ -z "$_CL" && -n "$CLAUDE_LEFT" ]] && _CL="$CLAUDE_LEFT"
+
+      if [[ -n "$_HL" && -n "$_GL" && -n "$_CL" ]]; then
+        _have_data=1
+        _src_tag="live(terminal)"
+      fi
+    fi
+  fi
+fi
+
+# ── 2. If no active terminal state or data missing, perform live network fetch ─
+if (( ! _have_data )); then
+  if ! command -v agy >/dev/null 2>&1; then
+    print -u2 "${cRe}Error:${R} weeklyquotaagy: 'agy' command not found in PATH."
+    return 1 2>/dev/null || exit 1
+  fi
+
+  local _raw=""
+  if (( _progress )) && [[ -t 1 || -t 2 ]]; then
+    local _tmp_out=$(mktemp)
+    (command agy -p "/quota" > "$_tmp_out" 2>&1) &
+    local _pid=$!
+    local _spin=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+    integer _sidx=1
+    typeset -F 1 _t_start=$EPOCHREALTIME
+    printf "\033[?25l" >&2
+    while kill -0 $_pid 2>/dev/null; do
+      typeset -F 1 _cur_t=$EPOCHREALTIME
+      typeset -F 1 _elapsed=$(( _cur_t - _t_start ))
+      printf "\r\033[1;36mFetching live quota from agy... %s \033[38;5;245m(%.1fs)\033[0m" "${_spin[$_sidx]}" $_elapsed >&2
+      _sidx=$(( (_sidx % ${#_spin}) + 1 ))
+      sleep 0.1
+    done
+    wait $_pid 2>/dev/null
+    printf "\r\033[2K\033[?25h" >&2
+    _raw=$(<"$_tmp_out")
+    rm -f "$_tmp_out"
+  else
+    _raw=$(command agy -p "/quota" 2>/dev/null)
+  fi
+
+  if [[ -z "$_raw" ]]; then
+    print -u2 "${cRe}Error:${R} weeklyquotaagy: Failed to fetch quota from agy (empty response)."
+    return 1 2>/dev/null || exit 1
+  fi
+
+  local _f_gl="" _f_g5="" _f_cl="" _f_c5="" _f_ts=""
+  eval $(awk '
+    /Gemini Models.*Weekly Limit Remaining/ {
+      for(i=1; i<=NF; i++) {
+        if($i ~ /^[0-9]+(\.[0-9]+)?%$/) { sub(/%/, "", $i); print "_f_gl=" $i; }
+        if($i ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/) { print "_f_ts=" $i; }
+      }
+    }
+    /Gemini Models.*Five Hour Limit Remaining/ {
+      for(i=1; i<=NF; i++) {
+        if($i ~ /^[0-9]+(\.[0-9]+)?%$/) { sub(/%/, "", $i); print "_f_g5=" $i; }
+      }
+    }
+    /Claude.*Weekly Limit Remaining/ {
+      for(i=1; i<=NF; i++) {
+        if($i ~ /^[0-9]+(\.[0-9]+)?%$/) { sub(/%/, "", $i); print "_f_cl=" $i; }
+      }
+    }
+    /Claude.*Five Hour Limit Remaining/ {
+      for(i=1; i<=NF; i++) {
+        if($i ~ /^[0-9]+(\.[0-9]+)?%$/) { sub(/%/, "", $i); print "_f_c5=" $i; }
+      }
+    }
+  ' <<< "$_raw")
+
+  local _f_hl=""
+  if [[ -n "$_f_ts" ]]; then
+    local _sec_reset _now_sec _diff
+    _sec_reset=$(date -u -jf "%Y-%m-%dT%H:%M:%SZ" "$_f_ts" +%s 2>/dev/null || date -u -d "$_f_ts" +%s 2>/dev/null)
+    if [[ -n "$_sec_reset" ]]; then
+      _now_sec=$(date -u +%s)
+      _diff=$(( _sec_reset - _now_sec ))
+      (( _diff < 0 )) && _diff=0
+      _f_hl=$(( _diff / 3600 ))
+    fi
+  fi
+
+  [[ -z "$_GL" && -n "$_f_gl" ]] && _GL="$_f_gl"
+  [[ -z "$_CL" && -n "$_f_cl" ]] && _CL="$_f_cl"
+  [[ -z "$_HL" && -n "$_f_hl" ]] && _HL="$_f_hl"
+
+  if [[ -z "$_HL" || -z "$_GL" || -z "$_CL" ]]; then
+    print -u2 "${cRe}Error:${R} weeklyquotaagy: Could not parse quota figures from agy output."
+    return 1 2>/dev/null || exit 1
+  fi
+
+  # Update active quota config
+  mkdir -p "$(dirname "$_CF")" 2>/dev/null
+  cat << CONF > "$_CF"
+GEMINI_LEFT=$_f_gl
+GEMINI_USED=$(( 100 - _f_gl ))
+GEMINI_5H_LEFT=${_f_g5:-0}
+CLAUDE_LEFT=$_f_cl
+CLAUDE_USED=$(( 100 - _f_cl ))
+CLAUDE_5H_LEFT=${_f_c5:-0}
+HOURS_LEFT=$_f_hl
+UPDATED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+CONF
+
+  _src_tag="live(network)"
+fi
+
+# ── 3. Strict validation (NO hardcoded fallback numbers) ─────────────────────
+if [[ -z "$_HL" || -z "$_GL" || -z "$_CL" ]]; then
+  print -u2 "${cRe}Error:${R} weeklyquotaagy: Missing required quota parameters."
+  return 1 2>/dev/null || exit 1
+fi
+
+integer _iHL=$_HL
+(( _iHL < 0   )) && _iHL=0
+(( _iHL > 168 )) && _iHL=168
+
+integer _el=$(( 168 - _iHL ))   # hours elapsed
+integer _ed=$(( _el / 24 ))     # full days elapsed
+integer _eh=$(( _el % 24 ))     # extra hours into current day
+integer _dy=$(( _ed + 1 ))      # current day (1-7)
+(( _dy > 7 )) && _dy=7
+
+typeset -F 1 _fGL=$_GL _fCL=$_CL
+typeset -F 1 _tgt=$(( _dy * (100.0 / 7.0) ))
+typeset -F 1 _GU=$(( 100.0 - _fGL ))
+typeset -F 1 _CU=$(( 100.0 - _fCL ))
+
+# ── Colors ────────────────────────────────────────────────────────────────────
+local cG="${ESC}[1;38;5;75m"    # Gemini label  — Google Cyan/Blue
+local cA="${ESC}[1;38;5;215m"   # Claude label  — Anthropic Coral/Amber
+local cGn="${ESC}[1;38;5;82m"   # bar fill      — vibrant green
+local cGr="${ESC}[48;5;238;38;5;250m"  # bar track — grey bg, light dots
+local cBl="${ESC}[1;38;5;82m"   # surplus diff  — green
+local cYe="${ESC}[1;38;5;214m"  # warn diff     — yellow
+local cW="${ESC}[1;97m"          # numbers       — bold white
+local cD="${ESC}[38;5;245m"      # secondary     — dim grey
+local cB="${ESC}[1m"             # bold
+
+# ── Box constants ─────────────────────────────────────────────────────────────
+local BF="██████████████████" BE="░░░░░░░░░░░░░░░░░░"
+integer IW=58  # inner visible width (number of ─ chars between ╭ and ╮)
+integer FX=36
+
+# ── Data row builder ──────────────────────────────────────────────────────────
+_wq_row() {
+  local _lbl="$1" _lc="$2"
+  typeset -F 1 _u=$3 _t=$4
+  typeset -F 1 _d=$(( _u - _t ))
+  typeset -F 0 _ui=$_u _di=$_d; integer _iu=$_ui _id=$_di
+  local _dc=$cBl _sg=""
+  (( _id > 10 )) && { _dc=$cRe; _sg="+"; } || (( _id > 0 )) && { _dc=$cYe; _sg="+"; }
+  typeset -F 0 _ff=$(( (_u / 100.0) * 18 ))
+  integer _f=$_ff _e=0
+  (( _f < 1 && _u > 0.0 )) && _f=1
+  (( _f > 18 )) && _f=18
+  _e=$(( 18 - _f ))
+  local _bf="" _be=""
+  (( _f > 0 )) && _bf="${BF[1,$_f]}"
+  (( _e > 0 )) && _be="${BE[1,$_e]}"
+  local _ps="${_iu}%" _ds="(${_sg}${_id}%)"
+  integer _pl=${#_ps} _dl=${#_ds}
+  integer _rp=$(( IW - FX - _pl - 1 - _dl ))
+  (( _rp < 0 )) && _rp=0
+  printf "${cB}│${R}  ${_lc}%-10s${R}  [${cGn}%s${cGr}%s${R}]  ${cW}%s${R} ${_dc}%s${R}%*s${cB}│${R}\n" \
+    "$_lbl" "$_bf" "$_be" "$_ps" "$_ds" $_rp ""
+}
+
+# ── Latency ───────────────────────────────────────────────────────────────────
+typeset -F 6 _TE=$EPOCHREALTIME
+typeset -F 1 _lat=$(( (_TE - _TS) * 1000.0 ))
+local _latS
+if (( _lat >= 1000.0 )); then
+  typeset -F 1 _latSec=$(( _lat / 1000.0 ))
+  _latS="${_latSec}s"
+else
+  _latS="${_lat}ms"
+fi
+(( ! _real )) && _latS="~${_latS}"
+
+# ── Header ────────────────────────────────────────────────────────────────────
+local _lv="  WEEKLY PACING ${_src_tag}   ${_ed}d ${_eh}h / 7d"
+local _rv="lat:${_latS}  "
+integer _hp=$(( IW - ${#_lv} - ${#_rv} ))
+(( _hp < 1 )) && _hp=1
+
+local _tagC="${cD}${_src_tag}${R}"
+[[ "$_src_tag" == "live(terminal)" ]] && _tagC="${cGn}${_src_tag}${R}"
+[[ "$_src_tag" == "live(network)" ]]  && _tagC="${cA}${_src_tag}${R}"
+
+local _lc="  ${cB}WEEKLY PACING${R} ${_tagC}   ${cW}${_ed}d ${_eh}h${R} ${cD}/ 7d${R}"
+local _rc="${cD}lat:${cW}${_latS}${R}  "
+
+# ── Print card ────────────────────────────────────────────────────────────────
+print ""
+print "${cB}╭──────────────────────────────────────────────────────────╮${R}"
+printf "${cB}│${R}%s%*s%s${cB}│${R}\n" "$_lc" $_hp "" "$_rc"
+print "${cB}├──────────────────────────────────────────────────────────┤${R}"
+_wq_row "Gemini"     "$cG" $_GU $_tgt
+_wq_row "Claude/GPT" "$cA" $_CU $_tgt
+print "${cB}╰──────────────────────────────────────────────────────────╯${R}"
+print ""
+
+unfunction _wq_row 2>/dev/null

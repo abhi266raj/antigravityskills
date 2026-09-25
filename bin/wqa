@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# wqa: Fast wrapper for weeklyquotaagy
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if command -v weeklyquotaagy >/dev/null 2>&1; then
+  exec weeklyquotaagy "$@"
+elif [[ -x "$SCRIPT_DIR/weeklyquotaagy" ]]; then
+  exec "$SCRIPT_DIR/weeklyquotaagy" "$@"
+else
+  echo "Error: weeklyquotaagy executable not found in PATH or $SCRIPT_DIR" >&2
+  exit 1
+fi
