@@ -75,6 +75,12 @@ alias wqa="weeklyquotaagy"
 weeklyquotaagy() {
   source "$HOME/Documents/code/antigravityskills/bin/weeklyquotaagy" "$@"
 }
+
+# 4. Auto-show pacing card on every `agy` launch
+agy() {
+  weeklyquotaagy --cached 2>/dev/null || weeklyquotaagy
+  command agy "$@"
+}
 ```
 
 *(Optional)* High-Precision Microsecond Latency Hook (tracks latency from exact <kbd>Enter</kbd> keystroke):
@@ -115,6 +121,12 @@ export PATH="$HOME/Documents/code/antigravityskills/bin:$PATH"
 
 # 2. Add alias
 alias wqa="weeklyquotaagy"
+
+# 3. Auto-show pacing card on every `agy` launch
+agy() {
+  weeklyquotaagy --cached 2>/dev/null || weeklyquotaagy
+  command agy "$@"
+}
 ```
 
 Reload Bash:
