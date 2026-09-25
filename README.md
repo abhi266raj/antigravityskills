@@ -158,6 +158,24 @@ Options:
 
 ---
 
+## ❓ Troubleshooting
+
+### 1. `weeklyquotaagy:source:1: no such file or directory: /Users/.../.agents/scripts/weeklyquotaagy`
+**Cause**: An existing terminal window still has the old in-memory function definition pointing to the previous path.  
+**Fix**: Reload your shell configuration in that terminal window:
+```bash
+source ~/.zshrc
+```
+Or open a new terminal tab/window.
+
+### 2. `command not found: wqa`
+**Cause**: The repository's `bin/` directory hasn't been added to your current shell's `$PATH`, or the shell configuration hasn't been reloaded yet.  
+**Fix**:
+1. Check that `export PATH="$HOME/Documents/code/antigravityskills/bin:$PATH"` is present in your `~/.zshrc` (or `~/.zshenv` / `~/.bashrc`).
+2. Run `source ~/.zshrc`.
+
+---
+
 ## 🔗 Related & Links
 
 - **Repository**: [https://github.com/abhi266raj/antigravityskills](https://github.com/abhi266raj/antigravityskills)
@@ -170,3 +188,4 @@ Options:
 ## 📄 License
 
 MIT
+
